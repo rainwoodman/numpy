@@ -160,8 +160,9 @@ class Where(Benchmark):
         np.where(self.cond, self.d, 0)
 
 class Search(Benchmark):
-    params = [[10, 100, 1000, 10000],
-              [10, 100, 1000, 10000],
+    params = [
+              [1000, 10000, 100000, 1000000],
+              [1000, 10000, 100000, 1000000],
               ['l', 'r'],
               ['sorted', 'random'],
               ['f8'],]
@@ -175,7 +176,7 @@ class Search(Benchmark):
             self.needle = self.sorted
         else:
             self.needle = self.random
-        self.haystack = np.arange(haystacksize)
+        self.haystack = np.arange(haystacksize) * needlesize // haystacksize
         self.side = side
 
     def time_1(self, *args):
