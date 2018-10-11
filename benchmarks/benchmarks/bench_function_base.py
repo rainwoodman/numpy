@@ -161,21 +161,25 @@ class Where(Benchmark):
 
 class Search(Benchmark):
     params = [
-              [1000, 10000, 100000, 1000000],
-              [1000, 10000, 100000, 1000000],
+              [10, 100, 1000, 10000, 100000, 1000000],
+              [10, 100, 1000, 10000, 100000, 1000000],
               ['l', 'r'],
-              ['sorted', 'random'],
+              ['sorted', 'random', 'inverted'],
               ['f8'],]
 
     param_names = ['needlesize', 'haystacksize', 'side', 'needletype', 'dtype']
 
     def setup(self, needlesize, haystacksize, side, needletype, dtype):
         self.sorted = np.arange(needlesize, dtype=dtype)
+        self.inverted = self.sorted[::-1].copy()
         self.random = np.random.RandomState(3333).choice(needlesize, size=needlesize).astype(dtype)
         if needletype == 'sorted':
             self.needle = self.sorted
+        elif needletype == 'inverted':
+            self.needle = self.inverted
         else:
             self.needle = self.random
+
         self.haystack = np.arange(haystacksize) * needlesize // haystacksize
         self.side = side
 
