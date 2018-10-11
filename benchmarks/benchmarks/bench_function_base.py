@@ -165,7 +165,7 @@ class Search(Benchmark):
               [10, 100, 1000, 10000, 100000, 1000000],
               ['l', 'r'],
               ['sorted', 'random', 'inverted'],
-              ['f8'],]
+              ['f8', 'i8'],]
 
     param_names = ['needlesize', 'haystacksize', 'side', 'needletype', 'dtype']
 
