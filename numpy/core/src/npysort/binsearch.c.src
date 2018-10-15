@@ -34,6 +34,64 @@
  * #side = left, right#
  * #CMP  = LT, LTE#
  */
+static inline npy_intp
+sorted_search_@side@_@suff@(
+                const char *arr, npy_intp min_idx, npy_intp max_idx, const npy_intp arr_str,
+                const char *key_start, const char *key_end, const npy_intp key_str,
+                char *ret_start, const npy_intp ret_str, const int merge, PyArrayObject *NOT_USED)
+{
+    const char * key;
+    char * ret;
+
+    if(merge) {
+        const char * arr_cursor = arr + min_idx*arr_str;
+        const char * arr_end = arr + max_idx*arr_str;
+
+        for(key = key_start, ret = ret_start;
+            key != key_end;
+            key += key_str,
+            ret += ret_str)
+        {
+            const @type@ key_val = *(const @type@ *)(key);
+
+            while(arr_cursor != arr_end) {
+                const @type@ cur_val = *(const @type@ *) arr_cursor;
+
+                if (@TYPE@_@CMP@(cur_val, key_val)) {
+                    arr_cursor += arr_str;
+                    min_idx ++;
+                } else {
+                    break;
+                }
+            }
+            *(npy_intp * ) ret = min_idx;
+        }
+    } else {
+        /* FIXME: investigate if looping in memory order increases speed. */
+        for(key = key_start, ret = ret_start;
+            key != key_end;
+            key += key_str,
+            ret += ret_str)
+        {
+            const @type@ key_val = *(const @type@ *)(key);
+
+            npy_intp max_idx1 = max_idx;
+            while(min_idx < max_idx1) {
+                const npy_intp mid_idx = min_idx + ((max_idx1 - min_idx) >> 1);
+
+                const @type@ mid_val = *(const @type@ *)(arr + mid_idx*arr_str);
+
+                if (@TYPE@_@CMP@(mid_val, key_val)) {
+                    min_idx = mid_idx + 1;
+                } else {
+                    max_idx1 = mid_idx;
+                }
+            }
+            *(npy_intp * ) ret = min_idx;
+        }
+    }
+    return min_idx;
+}
 
 NPY_VISIBILITY_HIDDEN void
 binsearch_@side@_@suff@(const char *arr, const char *key, char *ret,
@@ -41,43 +99,90 @@ binsearch_@side@_@suff@(const char *arr, const char *key, char *ret,
                         npy_intp arr_str, npy_intp key_str, npy_intp ret_str,
                         PyArrayObject *NOT_USED)
 {
-    npy_intp min_idx = 0;
-    npy_intp max_idx = arr_len;
     @type@ last_key_val;
+
+    npy_intp i, start;
+    npy_intp min_idx;
+    npy_intp max_idx;
+    int dir;
 
     if (key_len == 0) {
         return;
     }
+
     last_key_val = *(const @type@ *)key;
 
-    for (; key_len > 0; key_len--, key += key_str, ret += ret_str) {
-        const @type@ key_val = *(const @type@ *)key;
-        /*
-         * Updating only one of the indices based on the previous key
-         * gives the search a big boost when keys are sorted, but slightly
-         * slows down things for purely random ones.
-         */
-        if (@TYPE@_LT(last_key_val, key_val)) {
-            max_idx = arr_len;
-        }
-        else {
-            min_idx = 0;
-            max_idx = (max_idx < arr_len) ? (max_idx + 1) : arr_len;
-        }
+    min_idx = 0;
+    max_idx = arr_len;
+    start = 0;
+    dir = 1;
 
-        last_key_val = key_val;
+    const char * key_cursor = key;
+    const char * key_start = key;
+    char * ret_cursor = ret;
+    char * ret_start = ret;
+    for (i = 0; i <= key_len; i++, key_cursor += key_str, ret_cursor += ret_str) {
 
-        while (min_idx < max_idx) {
-            const npy_intp mid_idx = min_idx + ((max_idx - min_idx) >> 1);
-            const @type@ mid_val = *(const @type@ *)(arr + mid_idx*arr_str);
-            if (@TYPE@_@CMP@(mid_val, key_val)) {
-                min_idx = mid_idx + 1;
+        int newdir = 0;
+        if(i != key_len) {
+            const @type@ key_val = *(const @type@ *)(key_cursor);
+            /* find a sorted segment in keys */
+            if (@TYPE@_LTE(last_key_val, key_val)) {
+                newdir = 1;
+            } else {
+                newdir = -1;
             }
-            else {
-                max_idx = mid_idx;
-            }
+            last_key_val = key_val;
         }
-        *(npy_intp *)ret = min_idx;
+        if(newdir != dir) {
+            int merge;
+
+            npy_intp seg_len = i - start;
+
+            npy_intp rat = (seg_len + arr_len) / seg_len + 2;
+
+            /*
+
+                Condition for using merge is roughly:
+
+                    seg_len * log(arr_len) > seg_len + arr_len
+                    arr_len > 2 ** ((seg_len + arr_len / seg_len))
+            */
+
+            if (rat > sizeof(npy_intp) * 8 - 1)
+                merge = 0;
+            else
+                merge = (((unsigned) arr_len) >> (unsigned) rat);
+            /*
+            if(merge)
+                printf("seg_len = %td, arr_len = %td, merge = %td, rat = %d\n", seg_len, arr_len, merge, rat);
+            */
+
+            if(dir == 1) {
+                const npy_intp last_idx = sorted_search_@side@_@suff@(
+                    arr, min_idx, max_idx, arr_str,
+                    key_start, key_cursor, key_str,
+                    ret_start, ret_str, merge, NULL);
+
+                /* new segment is decreasing; nothing will be geater than arr[ret[i]] */
+                max_idx = last_idx < arr_len? last_idx + 1 : arr_len;
+                min_idx = 0;
+            }
+            if(dir == -1) {
+                const npy_intp last_idx = sorted_search_@side@_@suff@(
+                    arr, min_idx, max_idx, arr_str,
+                    key_cursor - key_str, key_start - key_str, -key_str,
+                    ret_cursor - ret_str, -ret_str, merge, NULL);
+
+                /* new segment is increasing; nothing will be less than arr[min_idx] */
+                max_idx = arr_len;
+                min_idx = last_idx;
+            }
+            dir = newdir;
+            start = i;
+            key_start = key_cursor;
+            ret_start = ret_cursor;
+        }
     }
 }
 
